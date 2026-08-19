@@ -49,3 +49,9 @@ async def chat_with_alex(request: ChatRequest):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+                         
+
+
+@app.get("/")
+def read_root():
+    return {"message": "ALEZON-ALEX-AI is live!"}
