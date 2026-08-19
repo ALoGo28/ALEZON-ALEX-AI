@@ -53,31 +53,11 @@ def fetch_shopify_products(search_query: str = ""):
     
     search_term = search_query.strip() if len(search_query) > 2 else ""
     
-    # Clean dictionary payload to avoid all string-formatting syntax errors
+    # Fully flat single-line query string with no triple-quotes or indentation traps
+    query_str = "{ products(first: 10, query: \"" + search_term + "\") { edges { node { title description onlineStoreUrl variants(first: 1) { edges { node { price } } } } } } }"
+    
     json_payload = {
-        "query": """
-            query getProducts($queryString: String!) {
-              products(first: 10, query: $queryString) {
-                edges {
-                  node {
-                    title
-                    description
-                    onlineStoreUrl
-                    variants(first: 1) {
-                      edges {
-                        node {
-                          price
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-        """,
-        "variables": {
-            "queryString": search_term
-        }
+        "query": query_str
     }
 
     try:
