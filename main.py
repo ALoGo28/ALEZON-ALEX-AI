@@ -58,7 +58,7 @@ def fetch_shopify_products(search_query: str = ""):
             return fallback_catalog
             
         catalog = []
-        for p in products[:15]: # Increased limit to grab all your new items
+        for p in products[:100]: # Increased limit to grab all your new items
             title = p.get("title", "Unknown")
             product_type = p.get("product_type", "Item")
             variants = p.get("variants", [])
