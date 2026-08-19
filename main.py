@@ -48,40 +48,42 @@ def get_shopify_access_token():
         return None
 
 def fetch_shopify_products(search_query: str = ""):
-    token = get_shopify_access_token()
-    if not token:
+    shop = os.getenv("SHOPIFY_SHOP", "").strip()
+    token = os.getenv("SHOPIFY_ACCESS_TOKEN") or os.getenv("SHOPIFY_CLIENT_SECRET")
+    
+    if not shop or not token:
         return "Shopify integration not configured."
     
-    url = f"https://{SHOPIFY_SHOP}/admin/api/2026-01/graphql.json"
+    # Clean up domain format
+    shop = shop.replace("https://", "").replace("http://", "").strip("/")
+    if not shop.endswith(".myshopify.com"):
+        shop = f"{shop}.myshopify.com"
+        
+    url = f"https://{shop}/admin/api/2024-01/products.json"
     headers = {
         "Content-Type": "application/json",
         "X-Shopify-Access-Token": token
     }
     
-    search_term = search_query.strip() if len(search_query) > 2 else ""
-    
-    # Fully flat single-line query string requesting titles and prices
-    query_str = "{ products(first: 10) { edges { node { title variants(first: 1) { edges { node { price } } } onlineStoreUrl } } } }"
-    
-    json_payload = {
-        "query": query_str
-    }
-
     try:
-        response = requests.post(url, json=json_payload, headers=headers, timeout=5)
+        response = requests.get(url, headers=headers, timeout=5)
+        if response.status_code != 200:
+            return f"Shopify API error code {response.status_code}"
+            
         data = response.json()
-        products = data.get("data", {}).get("products", {}).get("edges", [])
-
-        catalog_info = "Here are the available products from the store:\n"
-        for p in products:
-            node = p["node"]
-            title = node["title"]
-            variants = node.get("variants", {}).get("edges", [])
-            price = variants[0]["node"]["price"] if variants else "N/A"
-            link = node.get("onlineStoreUrl") or "Check store for link"
-            catalog_info += f"- {title} (${price}): Link: {link}\n"
-
-        return catalog_info
+        products = data.get("products", [])
+        
+        if not products:
+            return "No products found in store."
+            
+        catalog = []
+        for p in products[:10]:
+            title = p.get("title", "Unknown")
+            variants = p.get("variants", [])
+            price = variants[0].get("price", "N/A") if variants else "N/A"
+            catalog.append(f"- {title}: ${price}")
+            
+        return "Here are the available products:\n" + "\n".join(catalog)
     except Exception as e:
         return "Could not fetch store inventory at the moment"
 
