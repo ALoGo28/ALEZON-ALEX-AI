@@ -60,30 +60,30 @@ def fetch_shopify_products(search_query: str = ""):
     
     search_term = search_query.strip() if len(search_query) > 2 else ""
     
-    # Fully flat single-line query string with no triple-quotes or indentation traps
-    query_str = "{ products(first: 10, query: \"" + search_term + "\") { edges { node { title description onlineStoreUrl variants(first: 1) { edges { node { price } } } } } } }"
+    # Fully flat single-line query string requesting titles and prices
+    query_str = "{ products(first: 10) { edges { node { title variants(first: 1) { edges { node { price } } } onlineStoreUrl } } } }"
     
     json_payload = {
         "query": query_str
     }
 
     try:
-        response = requests.post(url, json=json_payload, headers=headers)
+        response = requests.post(url, json=json_payload, headers=headers, timeout=5)
         data = response.json()
         products = data.get("data", {}).get("products", {}).get("edges", [])
-        
-        catalog_info = "Here are the available products from ALEZON store:\n"
+
+        catalog_info = "Here are the available products from the store:\n"
         for p in products:
             node = p["node"]
             title = node["title"]
             variants = node.get("variants", {}).get("edges", [])
             price = variants[0]["node"]["price"] if variants else "N/A"
-            link = node.get("onlineStoreUrl") or "Check store"
+            link = node.get("onlineStoreUrl") or "Check store for link"
             catalog_info += f"- {title} (${price}): Link: {link}\n"
-            
+
         return catalog_info
-    except Exception:
-        return "Could not fetch store inventory at the moment."
+    except Exception as e:
+        return "Could not fetch store inventory at the moment"
 
 @app.post("/api/chat")
 async def chat_with_alex(request: ChatRequest):
