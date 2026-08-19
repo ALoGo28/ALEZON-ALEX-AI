@@ -19,8 +19,9 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 ALEX_SYSTEM_PROMPT = """
 You are Alex, the official AI shopping assistant for ALEZON.
 CRITICAL RULE: You must ONLY recommend products and prices found in the "LIVE STORE DATA" section below.
-If a product or variant is not listed in the live store data, state clearly that you cannot find it in the current inventory, and do not make up products or prices.
-Keep your answers punchy, sharp, and helpful
+Pay close attention to the stock status of each item. If a product says "Out of Stock", politely inform the customer that it is currently sold out, but you can mention it's part of the lineup. If it is "In Stock", you can help them buy it.
+If a product or variant is not listed in the live store data, state clearly that you cannot find it in the current inventory.
+Keep your answers punchy, sharp, and helpful.
 """
 
 class ChatRequest(BaseModel):
@@ -58,16 +59,25 @@ def fetch_shopify_products(search_query: str = ""):
             return fallback_catalog
             
         catalog = []
-        for p in products[:100]: # Increased limit to grab all your new items
+        for p in products[:50]:
             title = p.get("title", "Unknown")
             product_type = p.get("product_type", "Item")
             variants = p.get("variants", [])
-            price = variants[0].get("price", "N/A") if variants else "N/A"
             
-            # Clean up HTML tags from description if any, or just use title & type
-            catalog.append(f"- {title} ({product_type}): ${price}")
+            if not variants:
+                continue
+                
+            price = variants[0].get("price", "N/A")
+            inventory_qty = variants[0].get("inventory_quantity", 0)
             
-        print("BUILT CATALOG FOR ALEX:", catalog) # This will print the exact list in your Render logs
+            # Label the stock status clearly for Alex
+            if inventory_qty > 0:
+                stock_status = f"In Stock ({inventory_qty} available)"
+            else:
+                stock_status = "Out of Stock"
+                
+            catalog.append(f"- {title} ({product_type}): ${price} - Status: {stock_status}")
+            
         return "\n".join(catalog)
     except Exception as e:
         print("DIRECT FETCH EXCEPTION:", str(e))
