@@ -1,6 +1,6 @@
 import os
 import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from openai import OpenAI
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,25 +13,35 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 # Initialize OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-ALEX_SYSTEM_PROMPT = """
-You are Alex, the official AI shopping assistant for ALEZON.
-CRITICAL RULE: You must ONLY recommend products and prices found in the "LIVE STORE DATA" section below.
-Pay close attention to the stock status of each item. If a product says "Out of Stock", politely inform the customer that it is currently sold out, but you can mention it's part of the lineup. If it is "In Stock", you can help them buy it.
-If a product or variant is not listed in the live store data, state clearly that you cannot find it in the current inventory.
-Keep your answers punchy, sharp, and helpful.
-"""
+# Global dictionary to store live stock updates from Shopify Webhooks
+LIVE_INVENTORY = {}
 
 class ChatRequest(BaseModel):
     message: str
 
+@app.post("/webhook/inventory")
+async def handle_inventory_webhook(request: Request):
+    try:
+        data = await request.json()
+        product_title = data.get("title")
+        variants = data.get("variants", [])
+        
+        if variants:
+            inventory_qty = variants[0].get("inventory_quantity", 0)
+            LIVE_INVENTORY[product_title] = inventory_qty
+            print(f"WEBHOOK RECEIVED: {product_title} is now at {inventory_qty}")
+            
+        return {"status": "received"}
+    except Exception as e:
+        print("WEBHOOK ERROR:", str(e))
+        return {"status": "error", "detail": str(e)}
+
 def fetch_shopify_products(search_query: str = ""):
-    # Get your shop from environment variables, defaulting to your store domain
     shop = os.getenv("SHOPIFY_SHOP", "rkvtng-v3.myshopify.com").strip()
-    
-    # Fallback products just in case the request fails
     fallback_catalog = "- ALEZON Signature Shoes: $120.00\n- ALEZON Classic Sneaker: $95.00\n- ALEZON Streetwear Hoodie: $65.00"
     
     if not shop:
@@ -41,7 +51,6 @@ def fetch_shopify_products(search_query: str = ""):
     if not shop.endswith(".myshopify.com"):
         shop = f"{shop}.myshopify.com"
         
-    # Shopify's public products JSON endpoint needs NO tokens or secrets!
     url = f"https://{shop}/products.json"
     
     try:
@@ -69,12 +78,20 @@ def fetch_shopify_products(search_query: str = ""):
                 
             price = variants[0].get("price", "N/A")
             
-            # Since it's returned by the public JSON, it's an active live product!
-            stock_status = "IN STOCK"
+            # Check LIVE_INVENTORY. 
+            # If a webhook hasn't fired yet, it defaults to available (1). 
+            # If a webhook set it to 0, it marks it as OUT OF STOCK.
+            inventory_qty = LIVE_INVENTORY.get(title, 1)
+            
+            if inventory_qty > 0:
+                stock_status = f"IN STOCK ({inventory_qty} available)"
+            else:
+                stock_status = "OUT OF STOCK"
                 
             catalog.append(f"- {title} ({product_type}): ${price} | Status: {stock_status}")
             
         return "\n".join(catalog)
+        
     except Exception as e:
         print("DIRECT FETCH EXCEPTION:", str(e))
         return fallback_catalog
@@ -87,6 +104,7 @@ async def chat_with_alex(request: ChatRequest):
         dynamic_system_prompt = f"""
         You are Alex, the official AI shopping assistant for ALEZON.
         CRITICAL RULE: You must ONLY recommend products and prices found in the live store data below.
+        Pay close attention to stock status. If a product says "OUT OF STOCK", politely inform the customer that it is currently sold out.
         
         LIVE STORE DATA:
         {store_context}
