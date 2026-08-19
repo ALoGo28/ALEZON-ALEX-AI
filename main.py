@@ -68,16 +68,21 @@ def fetch_shopify_products(search_query: str = ""):
                 continue
                 
             price = variants[0].get("price", "N/A")
-            inventory_qty = variants[0].get("inventory_quantity", 0)
             
-            # Label the stock status clearly for Alex
-            if inventory_qty > 0:
-                stock_status = f"In Stock ({inventory_qty} available)"
-            else:
-                stock_status = "Out of Stock"
+            # Safely grab inventory quantity, checking both variant and fallback levels
+            inventory_qty = variants[0].get("inventory_quantity")
+            if inventory_qty is None:
+                inventory_qty = 0
                 
-            catalog.append(f"- {title} ({product_type}): ${price} - Status: {stock_status}")
+            # Clear text status explicitly for OpenAI to read
+            if int(inventory_qty) > 0:
+                stock_status = f"IN STOCK ({inventory_qty} available)"
+            else:
+                stock_status = "OUT OF STOCK (0 available)"
+                
+            catalog.append(f"- {title} ({product_type}): ${price} | Status: {stock_status}")
             
+        print("FINAL BUILT CATALOG:", catalog) # Check your Render logs to verify the numbers
         return "\n".join(catalog)
     except Exception as e:
         print("DIRECT FETCH EXCEPTION:", str(e))
