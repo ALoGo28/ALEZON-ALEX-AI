@@ -52,7 +52,7 @@ def fetch_shopify_products(search_query: str = ""):
     }
     query = f"""
     {{
-      products(first: 5, query: "{search_query}") {{
+      products(first: 10, query: "{search_query}") {{
         edges {{
           node {{
             title
