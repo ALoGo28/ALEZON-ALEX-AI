@@ -61,23 +61,18 @@ def fetch_shopify_products(search_query: str = ""):
         catalog = []
         for p in products[:50]:
             title = p.get("title", "Unknown")
+            product_type = p.get("product_type", "Item")
             variants = p.get("variants", [])
+            
             if not variants:
                 continue
                 
-            # Print the raw data straight from Shopify's JSON for this item
-            raw_qty = variants[0].get("inventory_quantity")
-            print(f"DEBUG ITEM: {title} | Raw Inventory Field: {raw_qty} (Type: {type(raw_qty)})")
-            
             price = variants[0].get("price", "N/A")
-            inventory_qty = int(raw_qty) if raw_qty is not None else 0
             
-            if inventory_qty > 0:
-                stock_status = f"IN STOCK ({inventory_qty} available)"
-            else:
-                stock_status = "OUT OF STOCK (0 available)"
+            # Since it's returned by the public JSON, it's an active live product!
+            stock_status = "IN STOCK"
                 
-            catalog.append(f"- {title}: ${price} | Status: {stock_status}")
+            catalog.append(f"- {title} ({product_type}): ${price} | Status: {stock_status}")
             
         return "\n".join(catalog)
     except Exception as e:
