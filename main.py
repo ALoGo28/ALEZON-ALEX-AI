@@ -58,12 +58,16 @@ def fetch_shopify_products(search_query: str = ""):
             return fallback_catalog
             
         catalog = []
-        for p in products[:10]:
+        for p in products[:15]: # Increased limit to grab all your new items
             title = p.get("title", "Unknown")
+            product_type = p.get("product_type", "Item")
             variants = p.get("variants", [])
             price = variants[0].get("price", "N/A") if variants else "N/A"
-            catalog.append(f"- {title}: ${price}")
             
+            # Clean up HTML tags from description if any, or just use title & type
+            catalog.append(f"- {title} ({product_type}): ${price}")
+            
+        print("BUILT CATALOG FOR ALEX:", catalog) # This will print the exact list in your Render logs
         return "\n".join(catalog)
     except Exception as e:
         print("DIRECT FETCH EXCEPTION:", str(e))
