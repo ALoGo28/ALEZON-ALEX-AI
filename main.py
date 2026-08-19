@@ -53,11 +53,35 @@ def fetch_shopify_products(search_query: str = ""):
     
     search_term = search_query.strip() if len(search_query) > 2 else ""
     
-    # Single-line query string to completely avoid python multi-line bracket errors
-    query = f'{{ products(first: 10, query: "{search_term}") {{ edges {{ node {{ title description onlineStoreUrl variants(first: 1) {{ edges {{ node {{ price }} }} }} }} }} }} }}'
+    # Clean dictionary payload to avoid all string-formatting syntax errors
+    json_payload = {
+        "query": """
+            query getProducts($queryString: String!) {
+              products(first: 10, query: $queryString) {
+                edges {
+                  node {
+                    title
+                    description
+                    onlineStoreUrl
+                    variants(first: 1) {
+                      edges {
+                        node {
+                          price
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+        """,
+        "variables": {
+            "queryString": search_term
+        }
+    }
 
     try:
-        response = requests.post(url, json={"query": query}, headers=headers)
+        response = requests.post(url, json=json_payload, headers=headers)
         data = response.json()
         products = data.get("data", {}).get("products", {}).get("edges", [])
         
