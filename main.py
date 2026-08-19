@@ -89,7 +89,7 @@ async def chat_with_alex(request: ChatRequest):
         {store_context}
         """
 
-        response = client.chat.completions.create(
+        response = client.chat.completions.create[
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": dynamic_system_prompt},
