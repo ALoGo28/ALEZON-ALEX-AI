@@ -53,27 +53,8 @@ def fetch_shopify_products(search_query: str = ""):
     
     search_term = search_query.strip() if len(search_query) > 2 else ""
     
-    # Using standard string concatenation for the GraphQL query to prevent syntax issues
-    query = """
-    {
-      products(first: 10, query: "%s") {
-        edges {
-          node {
-            title
-            description
-            onlineStoreUrl
-            variants(first: 1) {
-              edges {
-                node {
-                  price
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-    """ % search_term
+    # Single-line query string to completely avoid python multi-line bracket errors
+    query = f'{{ products(first: 10, query: "{search_term}") {{ edges {{ node {{ title description onlineStoreUrl variants(first: 1) {{ edges {{ node {{ price }} }} }} }} }} }} }}'
 
     try:
         response = requests.post(url, json={"query": query}, headers=headers)
