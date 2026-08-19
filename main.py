@@ -49,12 +49,20 @@ def get_shopify_access_token():
 
 def fetch_shopify_products(search_query: str = ""):
     shop = os.getenv("SHOPIFY_SHOP", "").strip()
-    token = os.getenv("SHOPIFY_ACCESS_TOKEN") or os.getenv("SHOPIFY_CLIENT_SECRET")
     
-    # Fallback products so Alex ALWAYS works and you can sleep
+    # Fallback products if anything fails
     fallback_catalog = "- ALEZON Signature Shoes: $120.00\n- ALEZON Classic Sneaker: $95.00\n- ALEZON Streetwear Hoodie: $65.00"
     
-    if not shop or not token:
+    if not shop:
+        return fallback_catalog
+        
+    # Get the token properly using your token function or environment variable
+    token = os.getenv("SHOPIFY_ACCESS_TOKEN")
+    if not token and SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET:
+        token = get_shopify_access_token()
+        
+    if not token:
+        print("SHOPIFY API ERROR: Could not resolve access token.")
         return fallback_catalog
         
     shop = shop.replace("https://", "").replace("http://", "").strip("/")
@@ -69,7 +77,10 @@ def fetch_shopify_products(search_query: str = ""):
     
     try:
         response = requests.get(url, headers=headers, timeout=5)
+        print("SHOPIFY RESPONSE STATUS:", response.status_code) # This will tell us if Shopify accepted it
+        
         if response.status_code != 200:
+            print("SHOPIFY ERROR BODY:", response.text)
             return fallback_catalog
             
         data = response.json()
@@ -87,7 +98,7 @@ def fetch_shopify_products(search_query: str = ""):
             
         return "\n".join(catalog)
     except Exception as e:
-        print ("SHOPIFY API ERROR:", str(e))
+        print("SHOPIFY API EXCEPTION:", str(e))
         return fallback_catalog
 
 @app.post("/api/chat")
