@@ -81,23 +81,25 @@ def fetch_shopify_products(search_query: str = ""):
 @app.post("/api/chat")
 async def chat_with_alex(request: ChatRequest):
     try:
-        store_context = fetch_shopify_products(request.message)
+        store_context = fetch_shopify_products()
+        
         dynamic_system_prompt = f"""
-        {ALEX_SYSTEM_PROMPT}
+        You are Alex, the official AI shopping assistant for ALEZON.
+        CRITICAL RULE: You must ONLY recommend products and prices found in the live store data below.
         
         LIVE STORE DATA:
         {store_context}
         """
-
-        response = client.chat.completions.create[
-            model:"gpt-4o",
+        
+        response = client.chat.completions.create(
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": dynamic_system_prompt},
                 {"role": "user", "content": request.message}
             ],
             temperature=0.7,
             max_tokens=300
-        ]
+        )
         reply = response.choices[0].message.content
         return {"response": reply}
     except Exception as e:
