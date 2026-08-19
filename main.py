@@ -41,7 +41,6 @@ def get_shopify_access_token():
         return None
 
 def fetch_shopify_products(search_query: str = ""):
-    """Fetches products from your Shopify store inventory."""
     token = get_shopify_access_token()
     if not token:
         return "Shopify integration not configured."
@@ -51,36 +50,45 @@ def fetch_shopify_products(search_query: str = ""):
         "Content-Type": "application/json",
         "X-Shopify-Access-Token": token
     }
-    query = f"""
-    {{
-      products(first: 10, query: "{search_query}") {{
-        edges {{
-          node {{
+    
+    search_term = search_query.strip() if len(search_query) > 2 else ""
+    
+    # Using standard string concatenation for the GraphQL query to prevent syntax issues
+    query = """
+    {
+      products(first: 10, query: "%s") {
+        edges {
+          node {
             title
             description
             onlineStoreUrl
-            variants(first: 1) {{
-              edges {{
-                node {{
+            variants(first: 1) {
+              edges {
+                node {
                   price
-                }}
-              }}
-            }}
-          }}
-        }}
-      }}
-    }}
-    """
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    """ % search_term
+
     try:
         response = requests.post(url, json={"query": query}, headers=headers)
-        products = response.json().get("data", {}).get("products", {}).get("edges", [])
+        data = response.json()
+        products = data.get("data", {}).get("products", {}).get("edges", [])
+        
         catalog_info = "Here are the available products from ALEZON store:\n"
         for p in products:
             node = p["node"]
             title = node["title"]
-            price = node["variants"]["edges"][0]["node"]["price"] if node["variants"]["edges"] else "N/A"
-            link = node["onlineStoreUrl"] or "Check store"
+            variants = node.get("variants", {}).get("edges", [])
+            price = variants[0]["node"]["price"] if variants else "N/A"
+            link = node.get("onlineStoreUrl") or "Check store"
             catalog_info += f"- {title} (${price}): Link: {link}\n"
+            
         return catalog_info
     except Exception:
         return "Could not fetch store inventory at the moment."
