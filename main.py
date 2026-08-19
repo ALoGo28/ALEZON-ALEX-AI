@@ -61,7 +61,7 @@ def fetch_shopify_products(search_query: str = ""):
     if not shop.endswith(".myshopify.com"):
         shop = f"{shop}.myshopify.com"
         
-    url = f"https://{shop}/admin/api/2024-01/products.json"
+    url = f"https://{shop}/admin/api/2026-01/products.json"
     headers = {
         "Content-Type": "application/json",
         "X-Shopify-Access-Token": token
@@ -86,7 +86,8 @@ def fetch_shopify_products(search_query: str = ""):
             catalog.append(f"- {title}: ${price}")
             
         return "\n".join(catalog)
-    except Exception:
+    except Exception as e:
+        print ("SHOPIFY API ERROR:", str(e))
         return fallback_catalog
 
 @app.post("/api/chat")
