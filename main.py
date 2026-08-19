@@ -16,11 +16,6 @@ app.add_middleware(
 # Initialize OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Shopify Credentials from Render Environment Variables
-SHOPIFY_SHOP = os.getenv("SHOPIFY_SHOP")
-SHOPIFY_CLIENT_ID = os.getenv("SHOPIFY_CLIENT_ID")
-SHOPIFY_CLIENT_SECRET = os.getenv("SHOPIFY_CLIENT_SECRET")
-
 ALEX_SYSTEM_PROMPT = """
 You are Alex, the official AI shopping assistant for ALEZON.
 CRITICAL RULE: You must ONLY recommend products and prices found in the "LIVE STORE DATA" section below.
@@ -31,56 +26,29 @@ Keep your answers punchy, sharp, and helpful
 class ChatRequest(BaseModel):
     message: str
 
-def get_shopify_access_token():
-    """Generates an access token using your Dev Dashboard credentials."""
-    if not SHOPIFY_SHOP or not SHOPIFY_CLIENT_ID or not SHOPIFY_CLIENT_SECRET:
-        return None
-    url = f"https://{SHOPIFY_SHOP}/admin/oauth/access_token"
-    payload = {
-        "client_id": SHOPIFY_CLIENT_ID,
-        "client_secret": SHOPIFY_CLIENT_SECRET,
-        "grant_type": "client_credentials"
-    }
-    try:
-        response = requests.post(url, json=payload)
-        return response.json().get("access_token")
-    except Exception:
-        return None
-
 def fetch_shopify_products(search_query: str = ""):
-    shop = os.getenv("SHOPIFY_SHOP", "").strip()
+    # Get your shop from environment variables, defaulting to your store domain
+    shop = os.getenv("SHOPIFY_SHOP", "rkvtng-v3.myshopify.com").strip()
     
-    # Fallback products if anything fails
+    # Fallback products just in case the request fails
     fallback_catalog = "- ALEZON Signature Shoes: $120.00\n- ALEZON Classic Sneaker: $95.00\n- ALEZON Streetwear Hoodie: $65.00"
     
     if not shop:
-        return fallback_catalog
-        
-    # Get the token properly using your token function or environment variable
-    token = os.getenv("SHOPIFY_ACCESS_TOKEN")
-    if not token and SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET:
-        token = get_shopify_access_token()
-        
-    if not token:
-        print("SHOPIFY API ERROR: Could not resolve access token.")
         return fallback_catalog
         
     shop = shop.replace("https://", "").replace("http://", "").strip("/")
     if not shop.endswith(".myshopify.com"):
         shop = f"{shop}.myshopify.com"
         
-    url = f"https://{shop}/admin/api/2026-01/products.json"
-    headers = {
-        "Content-Type": "application/json",
-        "X-Shopify-Access-Token": token
-    }
+    # Shopify's public products JSON endpoint needs NO tokens or secrets!
+    url = f"https://{shop}/products.json"
     
     try:
-        response = requests.get(url, headers=headers, timeout=5)
-        print("SHOPIFY RESPONSE STATUS:", response.status_code) # This will tell us if Shopify accepted it
+        response = requests.get(url, timeout=5)
+        print("PUBLIC SHOPIFY STATUS:", response.status_code)
         
         if response.status_code != 200:
-            print("SHOPIFY ERROR BODY:", response.text)
+            print("PUBLIC SHOPIFY ERROR:", response.text)
             return fallback_catalog
             
         data = response.json()
@@ -98,7 +66,7 @@ def fetch_shopify_products(search_query: str = ""):
             
         return "\n".join(catalog)
     except Exception as e:
-        print("SHOPIFY API EXCEPTION:", str(e))
+        print("DIRECT FETCH EXCEPTION:", str(e))
         return fallback_catalog
 
 @app.post("/api/chat")
