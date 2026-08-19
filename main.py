@@ -61,28 +61,24 @@ def fetch_shopify_products(search_query: str = ""):
         catalog = []
         for p in products[:50]:
             title = p.get("title", "Unknown")
-            product_type = p.get("product_type", "Item")
             variants = p.get("variants", [])
-            
             if not variants:
                 continue
                 
-            price = variants[0].get("price", "N/A")
+            # Print the raw data straight from Shopify's JSON for this item
+            raw_qty = variants[0].get("inventory_quantity")
+            print(f"DEBUG ITEM: {title} | Raw Inventory Field: {raw_qty} (Type: {type(raw_qty)})")
             
-            # Safely grab inventory quantity, checking both variant and fallback levels
-            inventory_qty = variants[0].get("inventory_quantity")
-            if inventory_qty is None:
-                inventory_qty = 0
-                
-            # Clear text status explicitly for OpenAI to read
-            if int(inventory_qty) > 0:
+            price = variants[0].get("price", "N/A")
+            inventory_qty = int(raw_qty) if raw_qty is not None else 0
+            
+            if inventory_qty > 0:
                 stock_status = f"IN STOCK ({inventory_qty} available)"
             else:
                 stock_status = "OUT OF STOCK (0 available)"
                 
-            catalog.append(f"- {title} ({product_type}): ${price} | Status: {stock_status}")
+            catalog.append(f"- {title}: ${price} | Status: {stock_status}")
             
-        print("FINAL BUILT CATALOG:", catalog) # Check your Render logs to verify the numbers
         return "\n".join(catalog)
     except Exception as e:
         print("DIRECT FETCH EXCEPTION:", str(e))
