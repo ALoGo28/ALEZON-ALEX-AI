@@ -35,6 +35,8 @@ HTML
 
 <script>
     const inputField = document.getElementById('userInput');
+    let chatHistory = []; // Tracks multi-turn conversation history
+
     inputField.addEventListener('keypress', function (e) {
         if (e.key === 'Enter') { sendMessage(); }
     });
@@ -45,23 +47,40 @@ HTML
 
         const chatMessages = document.getElementById('chatMessages');
         
-        // Append User Message
+        // 1. Append User Message to UI & history array
         chatMessages.innerHTML += `<div class="message user">${escapeHtml(text)}</div>`;
+        chatHistory.push({ role: "user", content: text });
         inputField.value = '';
         chatMessages.scrollTop = chatMessages.scrollHeight;
 
         try {
-            // Send request to your FastAPI backend
-            const response = await fetch('http://127.0.0.1:8000/api/chat', {
+            // Automatically use localhost if you're testing locally, or your Render URL if it's hosted!
+            const backendUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+                ? 'http://127.0.0.1:8000/api/chat' 
+                : 'https://alezon-alex-ai.onrender.com/api/chat'; // <-- Replace with your actual Render URL if it's different
+
+            // 2. Send the full history array to your backend
+            const response = await fetch(backendUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: text })
+                body: JSON.stringify({ messages: chatHistory })
             });
             
             const data = await response.json();
             
-            // Append Assistant Response
+            // 3. Append Assistant Response to UI & history array
             chatMessages.innerHTML += `<div class="message assistant">${escapeHtml(data.response)}</div>`;
+            chatHistory.push({ role: "assistant", content: data.response });
+
+            // 4. If a secure checkout link was returned, render the direct buy button!
+            if (data.checkout_url) {
+                chatMessages.innerHTML += `
+                    <div class="message assistant" style="background: #111; border-color: #fff;">
+                        <p style="margin: 0 0 8px 0;">Ready to complete your order?</p>
+                        <a href="${data.checkout_url}" target="_blank" style="display: inline-block; background: #fff; color: #000; padding: 8px 14px; border-radius: 4px; text-decoration: none; font-weight: bold;">Proceed to Checkout</a>
+                    </div>`;
+            }
+
             chatMessages.scrollTop = chatMessages.scrollHeight;
         } catch (error) {
             chatMessages.innerHTML += `<div class="message assistant" style="color: #ff6b6b;">Error connecting to Alex's brain. Is Uvicorn running?</div>`;
