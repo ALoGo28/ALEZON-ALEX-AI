@@ -1,4 +1,3 @@
-HTML
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -35,7 +34,7 @@ HTML
 
 <script>
     const inputField = document.getElementById('userInput');
-    let chatHistory = []; // Tracks multi-turn conversation history
+    let chatHistory = []; // Clean array tracking only { role, content }
 
     inputField.addEventListener('keypress', function (e) {
         if (e.key === 'Enter') { sendMessage(); }
@@ -54,25 +53,29 @@ HTML
         chatMessages.scrollTop = chatMessages.scrollHeight;
 
         try {
-            // Automatically use localhost if you're testing locally, or your Render URL if it's hosted!
             const backendUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
                 ? 'http://127.0.0.1:8000/api/chat' 
-                : 'https://alezon-alex-ai.onrender.com/api/chat'; // <-- Replace with your actual Render URL if it's different
+                : 'https://alezon-alex-ai.onrender.com/api/chat';
 
-            // 2. Send the full history array to your backend
-            const response = await fetch(backendUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ messages: chatHistory })
-            });
+            // 2. Send clean history to backend
+            const response = await fetch('https://alezon-alex-ai.onrender.com/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 
+        messages: chatHistory // Must be an array of objects: [{ role: "user", content: "..." }]
+    })
+});
             
             const data = await response.json();
             
-            // 3. Append Assistant Response to UI & history array
-            chatMessages.innerHTML += `<div class="message assistant">${escapeHtml(data.response)}</div>`;
-            chatHistory.push({ role: "assistant", content: data.response });
+            // Fallback text protection so it never displays 'undefined'
+            const responseText = data.response || "Hey! How can I help you with ALEZON today?";
 
-            // 4. If a secure checkout link was returned, render the direct buy button!
+            // 3. Append Assistant Response to UI & history array safely
+            chatMessages.innerHTML += `<div class="message assistant">${escapeHtml(responseText)}</div>`;
+            chatHistory.push({ role: "assistant", content: responseText });
+
+            // 4. Render checkout link button if returned
             if (data.checkout_url) {
                 chatMessages.innerHTML += `
                     <div class="message assistant" style="background: #111; border-color: #fff;">
@@ -83,7 +86,8 @@ HTML
 
             chatMessages.scrollTop = chatMessages.scrollHeight;
         } catch (error) {
-            chatMessages.innerHTML += `<div class="message assistant" style="color: #ff6b6b;">Error connecting to Alex's brain. Is Uvicorn running?</div>`;
+            console.error("Fetch error:", error);
+            chatMessages.innerHTML += `<div class="message assistant" style="color: #ff6b6b;">Error connecting to Alex's brain. Check connection.</div>`;
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
     }
