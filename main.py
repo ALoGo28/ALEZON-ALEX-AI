@@ -133,16 +133,13 @@ async def handle_inventory_webhook(request: Request):
         data = await request.json()
         print("WEBHOOK RECEIVED RAW:", data)
 
-        # Extract product title and variants from Shopify's product payload
         product_title = data.get("title")
         variants = data.get("variants", [])
 
         if product_title and variants:
-            # Get the inventory quantity of the first variant
             inventory_qty = variants[0].get("inventory_quantity", 0)
             variant_id = str(variants[0].get("id", ""))
 
-            # Update your live inventory dictionary using the actual product title
             LIVE_INVENTORY[product_title] = inventory_qty
             
             if variant_id:
@@ -158,13 +155,9 @@ async def handle_inventory_webhook(request: Request):
 @app.post("/api/chat")
 async def chat_with_alex(request: ChatRequest):
     try:
-        # Fetch base store products
         base_context = fetch_shopify_products()
-
-        # Build a live inventory string dynamically from your webhook dictionary
         live_stock_str = "\n".join([f"- {item}: {qty} in stock" for item, qty in LIVE_INVENTORY.items()])
         
-        # Combine them so Alex sees both the products and the real-time live stock counts
         store_context = f"{base_context}\n\nLIVE INVENTORY STATUS:\n{live_stock_str if LIVE_INVENTORY else '- ALEZON Black Hoodie: 1 in stock'}"
 
         dynamic_system_prompt = f"""
@@ -176,7 +169,6 @@ LIVE STORE DATA:
 {store_context}
         """
 
-        # Build message payload including full multi-turn conversation history
         messages = [{"role": "system", "content": dynamic_system_prompt}]
         for msg in request.messages:
             messages.append({"role": msg.role, "content": msg.content})
@@ -193,7 +185,6 @@ LIVE STORE DATA:
         response_message = response.choices[0].message
         checkout_url = None
 
-        # Handle OpenAI Function/Tool Calling
         if response_message.tool_calls:
             tool_call = response_message.tool_calls[0]
             if tool_call.function.name == "create_checkout_link":
@@ -216,16 +207,17 @@ LIVE STORE DATA:
                 )
                 
                 return {
-                    "response": second_response.choices[0].message.content,
+                    "response": second_response.choices[0].message.content or "Here is your checkout link below:",
                     "checkout_url": checkout_url
                 }
 
         return {
-            "response": response_message.content,
+            "response": response_message.content or "Hey! How can I help you with ALEZON today?",
             "checkout_url": None
         }
 
     except Exception as e:
+        print("CHAT ERROR:", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/")
