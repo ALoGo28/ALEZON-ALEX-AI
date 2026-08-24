@@ -217,7 +217,9 @@ LIVE STORE DATA:
         }
 
     except Exception as e:
-        print("CHAT ERROR:", str(e))
+        import traceback
+        print("CHAT ERROR EXCEPTION:", str(e))
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/")
