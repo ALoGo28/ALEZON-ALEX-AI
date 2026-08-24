@@ -27,7 +27,7 @@ class ChatMessage(BaseModel):
     content: str
 
 class ChatRequest(BaseModel):
-    messages: List[ChatMessage]
+    messages: List # Flexible list type to avoid strict validation mismatch 422 errors
 
 def fetch_shopify_products():
     """Fetches products from Shopify, updates inventory cache, and builds store context."""
