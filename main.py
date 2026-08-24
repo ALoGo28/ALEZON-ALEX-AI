@@ -128,16 +128,27 @@ tools = [
 
 @app.post("/webhook/inventory")
 async def handle_inventory_webhook(request: Request):
-    """Webhook to receive real-time inventory adjustments from Shopify."""
+    """Webhook to receive real-time product/inventory updates from Shopify."""
     try:
         data = await request.json()
         print("WEBHOOK RECEIVED RAW:", data)
 
-        available_qty = data.get("available")
-        if available_qty is not None:
-            for title in LIVE_INVENTORY.keys():
-                LIVE_INVENTORY[title] = available_qty
-            print(f"WEBHOOK UPDATED: Inventory set to {available_qty}")
+        # Extract product title and variants from Shopify's product payload
+        product_title = data.get("title")
+        variants = data.get("variants", [])
+
+        if product_title and variants:
+            # Get the inventory quantity of the first variant
+            inventory_qty = variants[0].get("inventory_quantity", 0)
+            variant_id = str(variants[0].get("id", ""))
+
+            # Update your live inventory dictionary using the actual product title
+            LIVE_INVENTORY[product_title] = inventory_qty
+            
+            if variant_id:
+                PRODUCT_VARIANT_CACHE[product_title.lower()] = variant_id
+
+            print(f"WEBHOOK UPDATED: {product_title} is now at {inventory_qty}")
 
         return {"status": "received"}
     except Exception as e:
