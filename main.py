@@ -1,5 +1,7 @@
 import os
+import json
 import requests
+from typing import List, Optional
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from openai import OpenAI
@@ -14,116 +16,207 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Global dictionary to store live stock updates from Shopify Webhooks
+# In-memory storage for live inventory quantities and variant IDs fetched from Shopify
 LIVE_INVENTORY = {}
+PRODUCT_VARIANT_CACHE = {}
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
 
 class ChatRequest(BaseModel):
-    message: str
+    messages: List[ChatMessage]
+
+def fetch_shopify_products():
+    """Fetches products from Shopify, updates inventory cache, and builds store context."""
+    shop = os.getenv("SHOPIFY_SHOP", "rkvtng-v3.myshopify.com").strip()
+    fallback_catalog = [
+        "- ALEZON Signature Shoes: $120.00\n"
+        "- ALEZON Classic Sneaker: $95.00\n"
+        "- ALEZON Streetwear Hoodie: $65.00"
+    ]
+    
+    if not shop:
+        return "\n".join(fallback_catalog)
+
+    shop = shop.replace("https://", "").replace("http://", "").strip("/")
+    if not shop.endswith(".myshopify.com"):
+        shop = f"{shop}.myshopify.com"
+
+    url = f"https://{shop}/products.json"
+    try:
+        response = requests.get(url, timeout=5)
+        if response.status_code != 200:
+            return "\n".join(fallback_catalog)
+            
+        data = response.json()
+        products = data.get("products", [])
+        if not products:
+            return "\n".join(fallback_catalog)
+
+        catalog = []
+        for p in products[:50]:
+            title = p.get("title", "Unknown")
+            variants = p.get("variants", [])
+            
+            if variants:
+                first_variant = variants[0]
+                price = first_variant.get("price", "N/A")
+                variant_id = str(first_variant.get("id", ""))
+                api_qty = first_variant.get("inventory_quantity", 1)
+                
+                PRODUCT_VARIANT_CACHE[title.lower()] = variant_id
+                
+                # Only initialize if not already tracked by webhook
+                if title not in LIVE_INVENTORY:
+                    LIVE_INVENTORY[title] = api_qty
+            else:
+                price = "N/A"
+
+            # Always pull the latest stock count from LIVE_INVENTORY as the source of truth
+            current_qty = LIVE_INVENTORY.get(title, 1)
+            status = f"IN STOCK ({current_qty} available)" if current_qty > 0 else "OUT OF STOCK"
+            catalog.append(f"- {title}: ${price} | Status: {status}")
+
+        return "\n".join(catalog)
+    except Exception:
+        return "\n".join(fallback_catalog)
+
+def generate_checkout_link(product_title: str) -> str:
+    """Dynamically generates a secure Shopify checkout link using cached variant IDs."""
+    shop = os.getenv("SHOPIFY_SHOP", "rkvtng-v3.myshopify.com").strip()
+    shop = shop.replace("https://", "").replace("http://", "").strip("/")
+    if not shop.endswith(".myshopify.com"):
+        shop = f"{shop}.myshopify.com"
+
+    # Fallback default variant IDs if cache is empty
+    fallback_mapping = {
+        "alezon signature shoes": "70881412",
+        "alezon classic sneaker": "70881382",
+        "alezon streetwear hoodie": "70881550"
+    }
+
+    title_lower = product_title.lower().strip()
+    variant_id = PRODUCT_VARIANT_CACHE.get(title_lower)
+
+    if not variant_id:
+        variant_id = fallback_mapping.get(title_lower, "70881412")
+
+    return f"https://{shop}/cart/{variant_id}:1"
+
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "create_checkout_link",
+            "description": "Generate a direct secure checkout link for a specific ALEZON product when the user wants to buy it.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "product_title": {
+                        "type": "string",
+                        "description": "The exact title of the product the user wants to buy."
+                    }
+                },
+                "required": ["product_title"]
+            }
+        }
+    }
+]
 
 @app.post("/webhook/inventory")
 async def handle_inventory_webhook(request: Request):
+    """Webhook to receive real-time inventory adjustments from Shopify."""
     try:
         data = await request.json()
-        product_title = data.get("title")
-        variants = data.get("variants", [])
-        
-        if variants:
-            inventory_qty = variants[0].get("inventory_quantity", 0)
-            LIVE_INVENTORY[product_title] = inventory_qty
-            print(f"WEBHOOK RECEIVED: {product_title} is now at {inventory_qty}")
-            
+        print("WEBHOOK RECEIVED RAW:", data)
+
+        available_qty = data.get("available")
+        if available_qty is not None:
+            for title in LIVE_INVENTORY.keys():
+                LIVE_INVENTORY[title] = available_qty
+            print(f"WEBHOOK UPDATED: Inventory set to {available_qty}")
+
         return {"status": "received"}
     except Exception as e:
         print("WEBHOOK ERROR:", str(e))
         return {"status": "error", "detail": str(e)}
 
-def fetch_shopify_products(search_query: str = ""):
-    shop = os.getenv("SHOPIFY_SHOP", "rkvtng-v3.myshopify.com").strip()
-    fallback_catalog = "- ALEZON Signature Shoes: $120.00\n- ALEZON Classic Sneaker: $95.00\n- ALEZON Streetwear Hoodie: $65.00"
-    
-    if not shop:
-        return fallback_catalog
-        
-    shop = shop.replace("https://", "").replace("http://", "").strip("/")
-    if not shop.endswith(".myshopify.com"):
-        shop = f"{shop}.myshopify.com"
-        
-    url = f"https://{shop}/products.json"
-    
-    try:
-        response = requests.get(url, timeout=5)
-        print("PUBLIC SHOPIFY STATUS:", response.status_code)
-        
-        if response.status_code != 200:
-            print("PUBLIC SHOPIFY ERROR:", response.text)
-            return fallback_catalog
-            
-        data = response.json()
-        products = data.get("products", [])
-        
-        if not products:
-            return fallback_catalog
-            
-        catalog = []
-        for p in products[:50]:
-            title = p.get("title", "Unknown")
-            product_type = p.get("product_type", "Item")
-            variants = p.get("variants", [])
-            
-            if not variants:
-                continue
-                
-            price = variants[0].get("price", "N/A")
-            
-            # Check LIVE_INVENTORY. 
-            # If a webhook hasn't fired yet, it defaults to available (1). 
-            # If a webhook set it to 0, it marks it as OUT OF STOCK.
-            inventory_qty = LIVE_INVENTORY.get(title, 1)
-            
-            if inventory_qty > 0:
-                stock_status = f"IN STOCK ({inventory_qty} available)"
-            else:
-                stock_status = "OUT OF STOCK"
-                
-            catalog.append(f"- {title} ({product_type}): ${price} | Status: {stock_status}")
-            
-        return "\n".join(catalog)
-        
-    except Exception as e:
-        print("DIRECT FETCH EXCEPTION:", str(e))
-        return fallback_catalog
-
 @app.post("/api/chat")
 async def chat_with_alex(request: ChatRequest):
     try:
-        store_context = fetch_shopify_products()
+        # Fetch base store products
+        base_context = fetch_shopify_products()
+
+        # Build a live inventory string dynamically from your webhook dictionary
+        live_stock_str = "\n".join([f"- {item}: {qty} in stock" for item, qty in LIVE_INVENTORY.items()])
         
+        # Combine them so Alex sees both the products and the real-time live stock counts
+        store_context = f"{base_context}\n\nLIVE INVENTORY STATUS:\n{live_stock_str if LIVE_INVENTORY else '- ALEZON Black Hoodie: 1 in stock'}"
+
         dynamic_system_prompt = f"""
-        You are Alex, the official AI shopping assistant for ALEZON.
-        CRITICAL RULE: You must ONLY recommend products and prices found in the live store data below.
-        Pay close attention to stock status. If a product says "OUT OF STOCK", politely inform the customer that it is currently sold out.
-        
-        LIVE STORE DATA:
-        {store_context}
+You are Alex, the official AI shopping assistant for ALEZON.
+CRITICAL RULE: You must ONLY recommend products found in the live store data below, and you must respect the exact numbers shown in the LIVE INVENTORY STATUS.
+If a user expresses intent to buy a product (e.g. 'yes', 'sure', 'proceed', 'buy it'), you MUST immediately call the 'create_checkout_link' tool for that specific product.
+
+LIVE STORE DATA:
+{store_context}
         """
-        
+
+        # Build message payload including full multi-turn conversation history
+        messages = [{"role": "system", "content": dynamic_system_prompt}]
+        for msg in request.messages:
+            messages.append({"role": msg.role, "content": msg.content})
+
         response = client.chat.completions.create(
             model="gpt-4o",
-            messages=[
-                {"role": "system", "content": dynamic_system_prompt},
-                {"role": "user", "content": request.message}
-            ],
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
             temperature=0.7,
             max_tokens=300
         )
-        reply = response.choices[0].message.content
-        return {"response": reply}
+
+        response_message = response.choices[0].message
+        checkout_url = None
+
+        # Handle OpenAI Function/Tool Calling
+        if response_message.tool_calls:
+            tool_call = response_message.tool_calls[0]
+            if tool_call.function.name == "create_checkout_link":
+                args = json.loads(tool_call.function.arguments)
+                product_title = args.get("product_title")
+
+                checkout_url = generate_checkout_link(product_title)
+
+                messages.append(response_message)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "name": "create_checkout_link",
+                    "content": f"Checkout link generated successfully: {checkout_url}"
+                })
+
+                second_response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=messages
+                )
+                
+                return {
+                    "response": second_response.choices[0].message.content,
+                    "checkout_url": checkout_url
+                }
+
+        return {
+            "response": response_message.content,
+            "checkout_url": None
+        }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/")
 def read_root():
-    return {"message": "ALEZON-ALEX-AI is live!"}
+    return {"message": "ALEZON-ALEX-AI is live with Dynamic Checkout & Memory!"}
