@@ -117,7 +117,7 @@ def fetch_shopify_products():
 
         catalog = []
 
-        for product in products[:50]:
+        for product in products[:1000]:
 
             title = product.get(
                 "title",
